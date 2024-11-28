@@ -96,21 +96,37 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 # --- Маршрут для генерации документа ---
 @app.post("/generate/")
 async def generate_document(data: DocumentData, db: Session = Depends(get_db)):
-    # Абсолютный путь к документу
-    file_name = os.path.join(DOCUMENTS_DIR, "generated_document.docx")
+    # Получаем шаблон из базы данных
+    template = db.query(Template).filter(Template.id == 1).first()
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден"
+        )
+
+    # Путь к шаблону
+    template_path = template.file_path
     
-    # Генерация документа
-    doc = Document()
-    doc.add_heading("Договор купли-продажи", level=1)
-    doc.add_paragraph(f"Продавец: {data.seller_name}")
-    doc.add_paragraph(f"Покупатель: {data.buyer_name}")
-    doc.add_paragraph(f"Предмет: {data.item}")
-    doc.add_paragraph(f"Цена: {data.price} руб.")
+    # Открываем шаблон
+    doc = Document(template_path)
+
+    # Заменяем метки в шаблоне на данные из формы
+    for paragraph in doc.paragraphs:
+        if "{{seller_name}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{seller_name}}", data.seller_name)
+        if "{{buyer_name}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{buyer_name}}", data.buyer_name)
+        if "{{item}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{item}}", data.item)
+        if "{{price}}" in paragraph.text:
+            paragraph.text = paragraph.text.replace("{{price}}", str(data.price))
+
+    # Сохраняем новый документ
+    file_name = os.path.join(DOCUMENTS_DIR, "generated_document.docx")
     doc.save(file_name)
 
-    # Сохранение документа в базе данных
+    # Сохраняем информацию о сгенерированном документе в базе данных
     new_document = GeneratedDocument(
-        template_id=1,  # Используем ID шаблона по умолчанию
+        template_id=template.id,
         seller_name=data.seller_name,
         buyer_name=data.buyer_name,
         item=data.item,
