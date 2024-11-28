@@ -5,6 +5,20 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from docx import Document
 from models import SessionLocal, Template, GeneratedDocument
+import os
+
+# Путь к папке app
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Путь к папке templates
+TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
+
+# Путь к папке documents
+DOCUMENTS_DIR = os.path.join(APP_DIR, "documents")
+
+# Создаём папки, если их нет
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 app = FastAPI()
 
@@ -44,7 +58,7 @@ async def upload_template(
     template_data: TemplateData = Depends(),
     db: Session = Depends(get_db),
 ):
-    file_path = f"templates/{file.filename}"
+    file_path = os.path.join(TEMPLATES_DIR, file.filename)  # Путь к файлу внутри templates
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
@@ -82,14 +96,10 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 # --- Маршрут для генерации документа ---
 @app.post("/generate/")
 async def generate_document(data: DocumentData, db: Session = Depends(get_db)):
-    # Получение шаблона (пока статический ID = 1)
-    template = db.query(Template).filter(Template.id == 1).first()
-    if not template:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Шаблон не найден"
-        )
-
-    file_name = "generated_document.docx"
+    # Абсолютный путь к документу
+    file_name = os.path.join(DOCUMENTS_DIR, "generated_document.docx")
+    
+    # Генерация документа
     doc = Document()
     doc.add_heading("Договор купли-продажи", level=1)
     doc.add_paragraph(f"Продавец: {data.seller_name}")
@@ -100,7 +110,7 @@ async def generate_document(data: DocumentData, db: Session = Depends(get_db)):
 
     # Сохранение документа в базе данных
     new_document = GeneratedDocument(
-        template_id=template.id,
+        template_id=1,  # Используем ID шаблона по умолчанию
         seller_name=data.seller_name,
         buyer_name=data.buyer_name,
         item=data.item,
@@ -115,7 +125,7 @@ async def generate_document(data: DocumentData, db: Session = Depends(get_db)):
 
 
 # --- Маршрут для скачивания документа ---
-@app.get("/documents/{document_id}")
+@app.get("documents/{document_id}")
 async def download_document(document_id: int, db: Session = Depends(get_db)):
     document = db.query(GeneratedDocument).filter(GeneratedDocument.id == document_id).first()
     if not document:
