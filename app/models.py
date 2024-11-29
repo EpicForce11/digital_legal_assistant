@@ -5,9 +5,9 @@ from sqlalchemy.orm import sessionmaker
 # Базовый класс для моделей
 Base = declarative_base()
 
-# Подключение к базе данных
-DATABASE_URL = "sqlite:///./database.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# Подключение к базе данных в папке 'app'
+DATABASE_URL = "sqlite:///./app/database.db"  # Указываем, что база данных в папке app
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Таблица шаблонов
@@ -29,5 +29,5 @@ class GeneratedDocument(Base):
     price = Column(Float)
     file_path = Column(String)  # Путь к сгенерированному документу
 
-# Создание таблиц в базе данных
+# Создание таблиц в базе данных (если они не существуют)
 Base.metadata.create_all(bind=engine)
