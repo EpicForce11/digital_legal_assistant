@@ -1,4 +1,3 @@
-# --- Регистрация шаблона в базе данных ---
 import os
 from models import SessionLocal, Template
 
@@ -34,10 +33,49 @@ def insert_template(name, description, file_name):
     finally:
         db.close()
 
+# Пример скрипта для удаления шаблона
+def delete_template(template_id=None, name=None):
+    if not template_id and not name:
+        raise ValueError("Необходимо указать либо template_id, либо name")
+    
+    db = SessionLocal()
+    try:
+        # Находим шаблон по ID или имени
+        query = db.query(Template)
+        if template_id:
+            template = query.filter(Template.id == template_id).first()
+        elif name:
+            template = query.filter(Template.name == name).first()
+        
+        if not template:
+            print(f"Шаблон с {'ID ' + str(template_id) if template_id else 'именем ' + name} не найден")
+            return
+        
+        # Удаляем файл шаблона с диска
+        if os.path.exists(template.file_path):
+            os.remove(template.file_path)
+            print(f"Файл шаблона '{template.file_path}' успешно удален")
+        
+        # Удаляем запись из базы данных
+        db.delete(template)
+        db.commit()
+        print(f"Шаблон с ID {template.id} успешно удален")
+    except Exception as e:
+        db.rollback()
+        print(f"Ошибка при удалении шаблона: {e}")
+    finally:
+        db.close()
+
 if __name__ == "__main__":
-    # Укажите имя шаблона, описание и имя файла
+    # Добавление шаблона
     insert_template(
         name="Договор купли-продажи-1",
         description="Шаблон для договора купли-продажи",
         file_name="BuySellContract.docx"  # Файл должен быть в папке templates
     )
+    
+    # Удаление шаблона по ID
+    delete_template(template_id=2)
+    
+    # Удаление шаблона по имени
+    delete_template(name="Договор купли-продажи-1")

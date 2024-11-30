@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status, Body
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -8,7 +8,7 @@ from models import SessionLocal, Template, GeneratedDocument
 import os
 import shutil
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 # Путь к папке app
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +42,7 @@ def get_db():
     finally:
         db.close()
 
-# --- Модели запросов --- 
+# --- Модели запросов ---
 class DocumentData(BaseModel):
     seller_name: str
     buyer_name: str
@@ -59,7 +59,7 @@ class LegalServicesData(BaseModel):
     client_passport_issued_date: str
     client_address: str
 
-# --- Маршрут для загрузки шаблонов --- 
+# --- Маршрут для загрузки шаблонов ---
 @app.post("/upload-template/")
 async def upload_template(file: UploadFile = File(...), db: Session = Depends(get_db)):
     # Генерируем путь для сохранения шаблона в папке templates
@@ -92,12 +92,11 @@ async def list_templates(db: Session = Depends(get_db)):
     templates = db.query(Template).all()
     return templates
 
-# --- Маршрут для генерации документа --- 
+# --- Маршрут для генерации документа ---
 @app.post("/generate/{template_id}/")
 async def generate_document(
     template_id: int,
-    data: Optional[DocumentData] = Depends(),
-    legal_data: Optional[LegalServicesData] = Depends(),
+    data: Union[DocumentData, LegalServicesData] = Body(...),  # Используем Body для данных из тела запроса
     db: Session = Depends(get_db)
 ):
     template = db.query(Template).filter(Template.id == template_id).first()
@@ -108,9 +107,8 @@ async def generate_document(
     template_path = template.file_path
     doc = Document(template_path)
     
-    # Заменяем плейсхолдеры в документе в зависимости от типа шаблона
-    if template.name == "BuySellContract":
-        # Заполнение плейсхолдеров для шаблона "BuySellContract"
+    # Заполняем плейсхолдеры в зависимости от типа шаблона
+    if template.name == "BuySellContract" and isinstance(data, DocumentData):
         for paragraph in doc.paragraphs:
             if "{{seller_name}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{seller_name}}", data.seller_name)
@@ -121,27 +119,26 @@ async def generate_document(
             if "{{price}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{price}}", str(data.price))
 
-    elif template.name == "LegalServicesContract":
-        # Заполнение плейсхолдеров для шаблона "LegalServicesContract"
+    elif template.name == "LegalServicesContract" and isinstance(data, LegalServicesData):
         for paragraph in doc.paragraphs:
             if "{{contract_date}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{contract_date}}", legal_data.contract_date)
+                paragraph.text = paragraph.text.replace("{{contract_date}}", data.contract_date)
             if "{{lawyer_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{lawyer_name}}", legal_data.lawyer_name)
+                paragraph.text = paragraph.text.replace("{{lawyer_name}}", data.lawyer_name)
             if "{{client_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_name}}", legal_data.client_name)
+                paragraph.text = paragraph.text.replace("{{client_name}}", data.client_name)
             if "{{client_passport_series}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_series}}", legal_data.client_passport_series)
+                paragraph.text = paragraph.text.replace("{{client_passport_series}}", data.client_passport_series)
             if "{{client_passport_number}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_number}}", legal_data.client_passport_number)
+                paragraph.text = paragraph.text.replace("{{client_passport_number}}", data.client_passport_number)
             if "{{client_passport_issued_by}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_issued_by}}", legal_data.client_passport_issued_by)
+                paragraph.text = paragraph.text.replace("{{client_passport_issued_by}}", data.client_passport_issued_by)
             if "{{client_passport_issued_date}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_issued_date}}", legal_data.client_passport_issued_date)
+                paragraph.text = paragraph.text.replace("{{client_passport_issued_date}}", data.client_passport_issued_date)
             if "{{client_address}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_address}}", legal_data.client_address)
+                paragraph.text = paragraph.text.replace("{{client_address}}", data.client_address)
 
-    # Получаем текущую дату для формирования уникального имени файла
+    # Генерация уникального имени файла
     today = datetime.today()
     date_str = today.strftime("%y%m%d")
     existing_documents_today = db.query(GeneratedDocument).filter(
@@ -152,10 +149,11 @@ async def generate_document(
     document_number = existing_documents_today + 1
     file_name = f"{date_str}-{document_number}_{template.name}.docx"
     file_path = os.path.join(DOCUMENTS_DIR, file_name)
-    
+
     # Сохраняем новый документ
     doc.save(file_path)
 
+    # Создаём запись в базе данных
     new_document = GeneratedDocument(
         template_id=template.id,
         file_path=file_path,
@@ -165,7 +163,8 @@ async def generate_document(
     db.commit()
     db.refresh(new_document)
 
-    return {"message": "Документ создан", "document_id": new_document.id}
+    # Возвращаем путь к документу для скачивания
+    return {"message": "Документ создан", "document_id": new_document.id, "file_path": f"/documents/{new_document.id}"}
 
 # Маршрут для скачивания документа
 @app.get("/documents/{document_id}")

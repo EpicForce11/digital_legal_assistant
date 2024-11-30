@@ -1,97 +1,97 @@
 import React, { useState, useEffect } from 'react';
 
 function App() {
-    const [templates, setTemplates] = useState([]);  // Массив для шаблонов
-    const [selectedTemplate, setSelectedTemplate] = useState(null);  // Выбранный шаблон
-    const [formData, setFormData] = useState({});  // Данные формы
-    const [templateName, setTemplateName] = useState("");  // Название шаблона
-    const [templateDescription, setTemplateDescription] = useState("");  // Описание шаблона
-    const [file, setFile] = useState(null);  // Файл шаблона
-    const [documentId, setDocumentId] = useState(null);  // ID сгенерированного документа
+    const [templates, setTemplates] = useState([]);
+    const [selectedTemplate, setSelectedTemplate] = useState(null);
+    const [formData, setFormData] = useState({});
+    const [error, setError] = useState(null);
+    const [newTemplateName, setNewTemplateName] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
 
     // Загружаем шаблоны с сервера
     useEffect(() => {
         const fetchTemplates = async () => {
-            const response = await fetch('http://127.0.0.1:8000/templates/');
-            const data = await response.json();
-            setTemplates(data);  // Сохраняем шаблоны в состояние
+            try {
+                const response = await fetch('http://127.0.0.1:8000/templates/');
+                if (!response.ok) throw new Error('Не удалось загрузить шаблоны');
+                const data = await response.json();
+                setTemplates(data);
+            } catch (error) {
+                setError(error.message);
+            }
         };
         fetchTemplates();
     }, []);
 
-    // Обработка изменения выбранного шаблона
+    // Обработчик изменения шаблона
     const handleTemplateChange = (e) => {
         const templateId = e.target.value;
         setSelectedTemplate(templateId);
         setFormData({});  // Сбрасываем данные формы при смене шаблона
     };
 
-    // Обработка изменений в полях формы
+    // Обработчик изменения данных формы
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData({ ...formData, [name]: value });
     };
 
-    // Обработка отправки формы
+    // Обработчик отправки формы для генерации документа
     const handleSubmit = async (e) => {
         e.preventDefault();
-
-        // Добавляем selectedTemplate в formData перед отправкой
-        const dataToSend = { 
-            ...formData, 
-            template_id: selectedTemplate  // Добавляем template_id из состояния
-        };
-
         try {
             const response = await fetch(`http://127.0.0.1:8000/generate/${selectedTemplate}/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(dataToSend),  // Отправляем данные с template_id
+                body: JSON.stringify(formData),
             });
             const data = await response.json();
-            setDocumentId(data.document_id);  // Сохраняем ID документа
-            alert(`Документ создан: ${data.document_id}`);
+            if (response.ok) {
+                alert(`Документ создан: ${data.document_id}`);
+            } else {
+                throw new Error(data.error || 'Ошибка при создании документа');
+            }
         } catch (error) {
-            console.error('Ошибка:', error);
+            alert(`Ошибка: ${error.message}`);
         }
     };
 
-    // Обработка отправки формы для загрузки шаблона
-    const handleTemplateUpload = async (e) => {
-        e.preventDefault();
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('name', templateName);
-        formData.append('description', templateDescription);
-
+    // Обработчик для добавления нового шаблона
+    const handleAddTemplate = async () => {
+        if (!newTemplateName) {
+            alert('Пожалуйста, введите название шаблона');
+            return;
+        }
+        setIsLoading(true);
         try {
-            const response = await fetch('http://127.0.0.1:8000/upload-template/', {
+            const response = await fetch('http://127.0.0.1:8000/templates/', {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ name: newTemplateName }),
             });
-            const data = await response.json();
-            alert(`Шаблон загружен с ID: ${data.template_id}`);
-            setTemplateName("");  // Очищаем поле
-            setTemplateDescription("");  // Очищаем описание
-            setFile(null);  // Очищаем файл
+            if (!response.ok) throw new Error('Не удалось добавить шаблон');
+            const newTemplate = await response.json();
+            setTemplates([...templates, newTemplate]);
+            setNewTemplateName('');
+            alert('Шаблон добавлен успешно');
         } catch (error) {
-            console.error('Ошибка:', error);
+            alert(`Ошибка: ${error.message}`);
+        } finally {
+            setIsLoading(false);
         }
     };
 
-    // Динамическое создание полей формы в зависимости от выбранного шаблона
+    // Функция рендеринга полей формы в зависимости от выбранного шаблона
     const renderFormFields = () => {
-        if (!selectedTemplate) return null;  // Если шаблон не выбран, не рендерим форму
-        
-        const template = templates.find(t => t.id === parseInt(selectedTemplate));  // Находим шаблон по ID
-        if (!template) return null;
-
-        switch (template.name) {
-            case "BuySellContract":
+        switch (parseInt(selectedTemplate)) {
+            case 1: // Шаблон для договора купли-продажи
                 return (
-                    <div>
+                    <>
+                        <h3>Договор купли-продажи</h3>
                         <label>
                             Продавец:
                             <input type="text" name="seller_name" onChange={handleChange} />
@@ -108,11 +108,12 @@ function App() {
                             Цена:
                             <input type="number" name="price" onChange={handleChange} />
                         </label>
-                    </div>
+                    </>
                 );
-            case "LegalServicesContract":
+            case 2: // Шаблон для договора юридических услуг
                 return (
-                    <div>
+                    <>
+                        <h3>Договор юридических услуг</h3>
                         <label>
                             Дата контракта:
                             <input type="text" name="contract_date" onChange={handleChange} />
@@ -145,51 +146,30 @@ function App() {
                             Адрес клиента:
                             <input type="text" name="client_address" onChange={handleChange} />
                         </label>
-                    </div>
+                    </>
                 );
             default:
                 return null;
         }
     };
 
-    // Функция для скачивания документа
-    const handleDownload = () => {
-        if (documentId) {
-            const downloadUrl = `http://127.0.0.1:8000/documents/${documentId}`;
-            window.location.href = downloadUrl;  // Инициализация скачивания
-        } else {
-            alert("Документ не найден!");
-        }
-    };
+    if (error) {
+        return <div>Ошибка: {error}</div>;
+    }
 
     return (
         <div>
             <h1>Генератор документов</h1>
 
-            <h2>Загрузить шаблон</h2>
-            <form onSubmit={handleTemplateUpload}>
-                <label>
-                    Название шаблона:
-                    <input type="text" value={templateName} onChange={e => setTemplateName(e.target.value)} required />
-                </label>
-                <label>
-                    Описание шаблона:
-                    <input type="text" value={templateDescription} onChange={e => setTemplateDescription(e.target.value)} />
-                </label>
-                <label>
-                    Файл шаблона (.docx):
-                    <input type="file" onChange={e => setFile(e.target.files[0])} required />
-                </label>
-                <button type="submit">Загрузить</button>
-            </form>
-
-            <h2>Выберите шаблон</h2>
+            {/* Выбор шаблона */}
             <label>
                 Выберите шаблон:
-                <select onChange={handleTemplateChange}>
+                <select onChange={handleTemplateChange} value={selectedTemplate || ''}>
                     <option value="">--Выберите--</option>
-                    {templates.map(template => (
-                        <option key={template.id} value={template.id}>{template.name}</option>
+                    {templates.map((template) => (
+                        <option key={template.id} value={template.id}>
+                            {template.name}
+                        </option>
                     ))}
                 </select>
             </label>
@@ -201,12 +181,19 @@ function App() {
                 </form>
             )}
 
-            {/* Кнопка для скачивания документа */}
-            {documentId && (
-                <div>
-                    <button onClick={handleDownload}>Скачать документ</button>
-                </div>
-            )}
+            {/* Форма для добавления нового шаблона */}
+            <div style={{ marginTop: '20px' }}>
+                <h3>Добавить новый шаблон</h3>
+                <input
+                    type="text"
+                    value={newTemplateName}
+                    onChange={(e) => setNewTemplateName(e.target.value)}
+                    placeholder="Название нового шаблона"
+                />
+                <button onClick={handleAddTemplate} disabled={isLoading}>
+                    {isLoading ? 'Загрузка...' : 'Добавить шаблон'}
+                </button>
+            </div>
         </div>
     );
 }
