@@ -7,6 +7,7 @@ function App() {
     const [error, setError] = useState(null);
     const [newTemplateName, setNewTemplateName] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [documentUrl, setDocumentUrl] = useState(''); // Новое состояние для URL документа
 
     // Загружаем шаблоны с сервера
     useEffect(() => {
@@ -50,6 +51,7 @@ function App() {
             const data = await response.json();
             if (response.ok) {
                 alert(`Документ создан: ${data.document_id}`);
+                setDocumentUrl(data.file_path); // Сохраняем путь для скачивания
             } else {
                 throw new Error(data.error || 'Ошибка при создании документа');
             }
@@ -153,6 +155,21 @@ function App() {
         }
     };
 
+    // Функция для скачивания документа
+    const handleDownload = async (documentId) => {
+        try {
+            const response = await fetch(`http://127.0.0.1:8000/documents/${documentId}`);
+            if (!response.ok) throw new Error('Не удалось скачать документ');
+            const blob = await response.blob();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `document_${documentId}.docx`;
+            link.click();
+        } catch (error) {
+            alert(`Ошибка: ${error.message}`);
+        }
+    };
+
     if (error) {
         return <div>Ошибка: {error}</div>;
     }
@@ -179,6 +196,14 @@ function App() {
                     {renderFormFields()}
                     <button type="submit">Генерировать документ</button>
                 </form>
+            )}
+
+            {documentUrl && (
+                <div style={{ marginTop: '20px' }}>
+                    <button onClick={() => handleDownload(documentUrl.split("/")[documentUrl.split("/").length - 1])}>
+                        Скачать документ
+                    </button>
+                </div>
             )}
 
             {/* Форма для добавления нового шаблона */}

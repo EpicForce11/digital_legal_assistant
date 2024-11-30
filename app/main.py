@@ -173,4 +173,9 @@ async def download_document(document_id: int, db: Session = Depends(get_db)):
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден")
     
+    # Проверяем, существует ли файл по указанному пути
+    if not os.path.exists(document.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден на сервере")
+
+    # Возвращаем файл пользователю
     return FileResponse(document.file_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=document.file_path.split("/")[-1])
