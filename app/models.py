@@ -6,7 +6,8 @@ from sqlalchemy.orm import sessionmaker
 Base = declarative_base()
 
 # Подключение к базе данных в папке 'app'
-DATABASE_URL = "sqlite:///./app/database.db"  # Указываем, что база данных в папке app
+# DATABASE_URL = "sqlite:///./app/database.db"
+DATABASE_URL = "sqlite:///./database.db"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}, echo=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
