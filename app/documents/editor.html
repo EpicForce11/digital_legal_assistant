@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Редактирование документа</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #edit-window {
+            width: 100%;
+            height: 80vh; /* Высота окна редактирования 80% от высоты экрана */
+            font-family: monospace;
+            white-space: pre-wrap;
+            overflow: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        .btn {
+            background-color: #007BFF;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Редактировать документ</h1>
+    
+    <div id="edit-window" contenteditable="true"></div> <!-- Место для редактирования документа -->
+    
+    <button id="saveBtn" class="btn">Сохранить изменения</button>
+
+    <script>
+        const documentId = new URLSearchParams(window.location.search).get('document_id');
+        
+        // Загрузка текста документа для редактирования
+        async function loadDocumentData() {
+            const response = await fetch(`/edit-document/${documentId}/`);
+            const data = await response.json();
+            
+            if (data.message === 'Документ не найден') {
+                alert("Документ не найден");
+                return;
+            }
+            
+            const editWindow = document.getElementById("edit-window");
+            editWindow.innerText = data.document_text || "Текст документа не найден."; // Загружаем весь текст документа
+        }
+
+        // Сохранение отредактированного текста
+        async function saveDocumentData() {
+            const editedText = document.getElementById("edit-window").innerText;
+
+            const response = await fetch(`/edit-document/${documentId}/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: editedText }),
+            });
+
+            const result = await response.json();
+            if (result.message === "Документ успешно обновлен") {
+                alert("Документ успешно обновлен!");
+            } else {
+                alert("Произошла ошибка при обновлении документа.");
+            }
+        }
+
+        // Инициализация загрузки и сохранения данных
+        document.getElementById('saveBtn').addEventListener('click', saveDocumentData);
+        loadDocumentData();
+    </script>
+</body>
+</html>

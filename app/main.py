@@ -1,14 +1,17 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, status, Body
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from docx import Document
 from models import SessionLocal, Template, GeneratedDocument
 import os
+import mammoth
+from pathlib import Path
+from io import BytesIO
 import shutil
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, Dict
 
 # Путь к папке app
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,11 +22,19 @@ TEMPLATES_DIR = os.path.join(APP_DIR, "templates")
 # Путь к папке documents
 DOCUMENTS_DIR = os.path.join(APP_DIR, "documents")
 
+# Путь к папке со сгенерированными документами
+DOCUMENTS_PATH = Path("app/documents")
+
 # Создаём папки, если их нет
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 app = FastAPI()
+
+# Для примера, просто словарь, который будет хранить наши документы.
+documents = {
+    1: "Это пример текста документа. Здесь можно редактировать любые данные.",
+}
 
 # Подключение CORS для фронтенда
 app.add_middleware(
@@ -58,6 +69,9 @@ class LegalServicesData(BaseModel):
     client_passport_issued_by: str
     client_passport_issued_date: str
     client_address: str
+    
+class DocumentText(BaseModel):
+    text: str
 
 # --- Маршрут для загрузки шаблонов ---
 @app.post("/upload-template/")
@@ -180,22 +194,29 @@ async def download_document(document_id: int, db: Session = Depends(get_db)):
     # Возвращаем файл пользователю
     return FileResponse(document.file_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=document.file_path.split("/")[-1])
 
+@app.get("/edit-document/{document_id}/")
+async def get_document(document_id: int):
+    if document_id not in documents:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    return {"document_text": documents[document_id]}
+
 # Маршрут для редактирования документа
 @app.post("/edit-document/{document_id}/")
 async def edit_document(
     document_id: int,
-    data: Union[DocumentData, LegalServicesData] = Body(...),
+    data: Union[DocumentData, LegalServicesData, DocumentText] = Body(...),
     db: Session = Depends(get_db)
 ):
+    # Ищем документ в базе данных
     document = db.query(GeneratedDocument).filter(GeneratedDocument.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден")
     
     # Открываем документ для редактирования
     doc = Document(document.file_path)
-    
-    # Вносим изменения, аналогично генерации документа
-    if document.template.name == "BuySellContract" and isinstance(data, DocumentData):
+
+    # Применяем изменения в зависимости от типа данных
+    if isinstance(data, DocumentData) and document.template.name == "BuySellContract":
         for paragraph in doc.paragraphs:
             if "{{seller_name}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{seller_name}}", data.seller_name)
@@ -205,8 +226,8 @@ async def edit_document(
                 paragraph.text = paragraph.text.replace("{{item}}", data.item)
             if "{{price}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{price}}", str(data.price))
-    
-    elif document.template.name == "LegalServicesContract" and isinstance(data, LegalServicesData):
+
+    elif isinstance(data, LegalServicesData) and document.template.name == "LegalServicesContract":
         for paragraph in doc.paragraphs:
             if "{{contract_date}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{contract_date}}", data.contract_date)
@@ -225,7 +246,52 @@ async def edit_document(
             if "{{client_address}}" in paragraph.text:
                 paragraph.text = paragraph.text.replace("{{client_address}}", data.client_address)
 
+    elif isinstance(data, DocumentText):
+        # Простое обновление всего текста документа
+        for paragraph in doc.paragraphs:
+            paragraph.text = data.text
+
+    else:
+        raise HTTPException(status_code=400, detail="Недопустимый формат данных для этого документа")
+
     # Сохраняем изменения
     doc.save(document.file_path)
 
-    return {"message": "Документ успешно отредактирован", "document_id": document.id}
+    return {"message": "Документ успешно обновлён", "file_path": f"/documents/{document.id}"}
+
+# Загружаем документ и конвертируем его в HTML
+@app.get("/document/{document_name}")
+async def get_document(document_name: str):
+    document_path = DOCUMENTS_PATH / document_name
+    if not document_path.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    with open(document_path, "rb") as docx_file:
+        result = mammoth.convert_to_html(docx_file)
+        html_content = result.value
+
+    return HTMLResponse(content=html_content)
+
+# Сохраняем изменения и возвращаем новый файл
+@app.post("/save-document/{document_name}")
+async def save_document(document_name: str, content: str):
+    document_path = DOCUMENTS_PATH / document_name
+    if not document_path.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Создаём новый .docx файл из полученного HTML
+    # Простой пример: можно использовать любой метод для создания .docx из HTML
+    # Для упрощения, тут мы просто заменяем старый файл новым контентом.
+    with open(document_path, "wb") as new_file:
+        new_file.write(content.encode("utf-8"))
+
+    return {"message": "Document saved successfully", "file_name": document_name}
+
+# Скачать документ
+@app.get("/download/{document_name}")
+async def download_document(document_name: str):
+    document_path = DOCUMENTS_PATH / document_name
+    if not document_path.exists():
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    return FileResponse(document_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=document_name)

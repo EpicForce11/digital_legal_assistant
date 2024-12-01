@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 
 function App() {
-    const [templates, setTemplates] = useState([]);
-    const [selectedTemplate, setSelectedTemplate] = useState(null);
-    const [formData, setFormData] = useState({});
-    const [error, setError] = useState(null);
-    const [newTemplateName, setNewTemplateName] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [documentUrl, setDocumentUrl] = useState('');
-    const [documentId, setDocumentId] = useState(null); // Новый state для ID документа
-    const [editedFormData, setEditedFormData] = useState({}); // Для редактирования документа
+    const [templates, setTemplates] = useState([]);  // Массив для шаблонов
+    const [selectedTemplate, setSelectedTemplate] = useState(null);  // Выбранный шаблон
+    const [formData, setFormData] = useState({});  // Данные формы
+    const [newTemplateName, setNewTemplateName] = useState('');  // Название шаблона
+    const [newTemplateDescription, setNewTemplateDescription] = useState('');  // Описание шаблона
+    const [file, setFile] = useState(null);  // Файл шаблона
+    const [documentUrl, setDocumentUrl] = useState('');  // URL сгенерированного документа
+    const [isLoading, setIsLoading] = useState(false);  // Статус загрузки шаблона
+    const [error, setError] = useState(null);  // Ошибка
 
     // Загружаем шаблоны с сервера
     useEffect(() => {
@@ -18,7 +18,7 @@ function App() {
                 const response = await fetch('http://127.0.0.1:8000/templates/');
                 if (!response.ok) throw new Error('Не удалось загрузить шаблоны');
                 const data = await response.json();
-                setTemplates(data);
+                setTemplates(data);  // Сохраняем шаблоны в состояние
             } catch (error) {
                 setError(error.message);
             }
@@ -26,65 +26,72 @@ function App() {
         fetchTemplates();
     }, []);
 
-    // Обработчик изменения шаблона
+    // Обработка изменения выбранного шаблона
     const handleTemplateChange = (e) => {
         const templateId = e.target.value;
         setSelectedTemplate(templateId);
         setFormData({});  // Сбрасываем данные формы при смене шаблона
-        setEditedFormData({}); // Сброс данных редактирования при смене шаблона
     };
 
-    // Обработчик изменения данных формы
+    // Обработка изменений в полях формы
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData({ ...formData, [name]: value });
     };
 
-    // Обработчик отправки формы для генерации документа
+    // Обработка отправки формы
     const handleSubmit = async (e) => {
-        console.log('Отправляемые данные для генерации документа:', formData); // Логируем данные перед отправкой
         e.preventDefault();
+
+        // Добавляем selectedTemplate в formData перед отправкой
+        const dataToSend = { 
+            ...formData, 
+            template_id: selectedTemplate  // Добавляем template_id из состояния
+        };
+
         try {
             const response = await fetch(`http://127.0.0.1:8000/generate/${selectedTemplate}/`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(formData),
+                body: JSON.stringify(dataToSend),  // Отправляем данные с template_id
             });
             const data = await response.json();
-            if (response.ok) {
-                alert(`Документ создан: ${data.document_id}`);
-                setDocumentId(data.document_id); // Сохраняем ID документа
-                setDocumentUrl(data.file_path); // Сохраняем путь для скачивания
-            } else {
-                throw new Error(data.error || 'Ошибка при создании документа');
-            }
+            setDocumentUrl(data.file_path);  // Сохраняем путь для скачивания
+            alert(`Документ создан: ${data.document_id}`);
         } catch (error) {
             alert(`Ошибка: ${error.message}`);
         }
     };
 
-    // Обработчик для добавления нового шаблона
-    const handleAddTemplate = async () => {
-        if (!newTemplateName) {
-            alert('Пожалуйста, введите название шаблона');
+    // Обработка отправки формы для загрузки шаблона
+    const handleTemplateUpload = async (e) => {
+        e.preventDefault();
+
+        // Проверка, чтобы имя шаблона и файл были заполнены
+        if (!newTemplateName || !file) {
+            alert('Пожалуйста, заполните все поля');
             return;
         }
+
+        const formDataToUpload = new FormData();
+        formDataToUpload.append('file', file);
+        formDataToUpload.append('name', newTemplateName);
+        formDataToUpload.append('description', newTemplateDescription);
+
         setIsLoading(true);
         try {
-            const response = await fetch('http://127.0.0.1:8000/templates/', {
+            const response = await fetch('http://127.0.0.1:8000/upload-template/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ name: newTemplateName }),
+                body: formDataToUpload
             });
-            if (!response.ok) throw new Error('Не удалось добавить шаблон');
-            const newTemplate = await response.json();
-            setTemplates([...templates, newTemplate]);
-            setNewTemplateName('');
-            alert('Шаблон добавлен успешно');
+            const data = await response.json();
+            alert(`Шаблон загружен с ID: ${data.template_id}`);
+            setNewTemplateName('');  // Очищаем поле
+            setNewTemplateDescription('');  // Очищаем описание
+            setFile(null);  // Очищаем файл
+            setTemplates([...templates, data]);  // Добавляем новый шаблон в список
         } catch (error) {
             alert(`Ошибка: ${error.message}`);
         } finally {
@@ -92,128 +99,71 @@ function App() {
         }
     };
 
-    // Функция рендеринга полей формы в зависимости от выбранного шаблона
+    // Динамическое создание полей формы в зависимости от выбранного шаблона
     const renderFormFields = () => {
-        switch (parseInt(selectedTemplate)) {
-            case 1: // Шаблон для договора купли-продажи
+        if (!selectedTemplate) return null;  // Если шаблон не выбран, не рендерим форму
+        
+        const template = templates.find(t => t.id === parseInt(selectedTemplate));  // Находим шаблон по ID
+        if (!template) return null;
+
+        switch (template.name) {
+            case "BuySellContract":
                 return (
-                    <>
-                        <h3>Договор купли-продажи</h3>
+                    <div>
                         <label>
                             Продавец:
-                            <input
-                                type="text"
-                                name="seller_name"
-                                value={formData.seller_name || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="seller_name" onChange={handleChange} />
                         </label>
                         <label>
                             Покупатель:
-                            <input
-                                type="text"
-                                name="buyer_name"
-                                value={formData.buyer_name || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="buyer_name" onChange={handleChange} />
                         </label>
                         <label>
                             Товар:
-                            <input
-                                type="text"
-                                name="item"
-                                value={formData.item || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="item" onChange={handleChange} />
                         </label>
                         <label>
                             Цена:
-                            <input
-                                type="number"
-                                name="price"
-                                value={formData.price || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="number" name="price" onChange={handleChange} />
                         </label>
-                    </>
+                    </div>
                 );
-            case 2: // Шаблон для договора юридических услуг
+            case "LegalServicesContract":
                 return (
-                    <>
-                        <h3>Договор юридических услуг</h3>
+                    <div>
                         <label>
                             Дата контракта:
-                            <input
-                                type="text"
-                                name="contract_date"
-                                value={formData.contract_date || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="contract_date" onChange={handleChange} />
                         </label>
                         <label>
                             Юрист:
-                            <input
-                                type="text"
-                                name="lawyer_name"
-                                value={formData.lawyer_name || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="lawyer_name" onChange={handleChange} />
                         </label>
                         <label>
                             Клиент:
-                            <input
-                                type="text"
-                                name="client_name"
-                                value={formData.client_name || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_name" onChange={handleChange} />
                         </label>
                         <label>
                             Серия паспорта клиента:
-                            <input
-                                type="text"
-                                name="client_passport_series"
-                                value={formData.client_passport_series || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_passport_series" onChange={handleChange} />
                         </label>
                         <label>
                             Номер паспорта клиента:
-                            <input
-                                type="text"
-                                name="client_passport_number"
-                                value={formData.client_passport_number || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_passport_number" onChange={handleChange} />
                         </label>
                         <label>
                             Кем выдан паспорт:
-                            <input
-                                type="text"
-                                name="client_passport_issued_by"
-                                value={formData.client_passport_issued_by || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_passport_issued_by" onChange={handleChange} />
                         </label>
                         <label>
                             Дата выдачи паспорта:
-                            <input
-                                type="text"
-                                name="client_passport_issued_date"
-                                value={formData.client_passport_issued_date || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_passport_issued_date" onChange={handleChange} />
                         </label>
                         <label>
                             Адрес клиента:
-                            <input
-                                type="text"
-                                name="client_address"
-                                value={formData.client_address || ''}
-                                onChange={handleChange}
-                            />
+                            <input type="text" name="client_address" onChange={handleChange} />
                         </label>
-                    </>
+                    </div>
                 );
             default:
                 return null;
@@ -222,39 +172,14 @@ function App() {
 
     // Функция для скачивания документа
     const handleDownload = async () => {
-        if (!documentId) return alert('Документ еще не создан!');
         try {
-            const response = await fetch(`http://127.0.0.1:8000/documents/${documentId}`);
+            const response = await fetch(`http://127.0.0.1:8000/documents/${documentUrl.split('/').pop()}`);
             if (!response.ok) throw new Error('Не удалось скачать документ');
             const blob = await response.blob();
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `document_${documentId}.docx`;
+            link.download = `document_${documentUrl.split('/').pop()}.docx`;
             link.click();
-        } catch (error) {
-            alert(`Ошибка: ${error.message}`);
-        }
-    };
-
-    // Функция для редактирования документа
-    const handleEdit = async () => {
-        if (!documentId) return alert('Документ не найден!');
-        console.log('Отправляемые данные для редактирования документа:', editedFormData); // Логируем данные перед отправкой
-        try {
-            const response = await fetch(`http://127.0.0.1:8000/edit-document/${documentId}/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(editedFormData),
-            });
-            const data = await response.json();
-            if (response.ok) {
-                alert('Документ успешно отредактирован');
-                setDocumentUrl(data.file_path); // Обновление пути к документу
-            } else {
-                throw new Error(data.error || 'Ошибка при редактировании документа');
-            }
         } catch (error) {
             alert(`Ошибка: ${error.message}`);
         }
@@ -267,6 +192,43 @@ function App() {
     return (
         <div>
             <h1>Генератор документов</h1>
+
+            {/* Загрузка нового шаблона */}
+            <div style={{ marginBottom: '20px' }}>
+                <h3>Загрузить новый шаблон</h3>
+                <form onSubmit={handleTemplateUpload}>
+                    <label>
+                        Название шаблона:
+                        <input
+                            type="text"
+                            value={newTemplateName}
+                            onChange={(e) => setNewTemplateName(e.target.value)}
+                            placeholder="Название шаблона"
+                            required
+                        />
+                    </label>
+                    <label>
+                        Описание шаблона:
+                        <input
+                            type="text"
+                            value={newTemplateDescription}
+                            onChange={(e) => setNewTemplateDescription(e.target.value)}
+                            placeholder="Описание шаблона"
+                        />
+                    </label>
+                    <label>
+                        Файл шаблона (.docx):
+                        <input
+                            type="file"
+                            onChange={(e) => setFile(e.target.files[0])}
+                            required
+                        />
+                    </label>
+                    <button type="submit" disabled={isLoading}>
+                        {isLoading ? 'Загрузка...' : 'Загрузить шаблон'}
+                    </button>
+                </form>
+            </div>
 
             {/* Выбор шаблона */}
             <label>
@@ -283,36 +245,19 @@ function App() {
 
             {selectedTemplate && (
                 <form onSubmit={handleSubmit}>
+                    <h3>Заполните данные</h3>
                     {renderFormFields()}
-                    <button type="submit">Генерировать документ</button>
+
+                    <button type="submit">Создать документ</button>
                 </form>
             )}
 
             {documentUrl && (
-                <div style={{ marginTop: '20px' }}>
+                <div>
+                    <h3>Документ готов!</h3>
                     <button onClick={handleDownload}>Скачать документ</button>
                 </div>
             )}
-
-            {documentId && (
-                <div style={{ marginTop: '20px' }}>
-                    <button onClick={handleEdit}>Редактировать документ</button>
-                </div>
-            )}
-
-            {/* Форма для добавления нового шаблона */}
-            <div style={{ marginTop: '20px' }}>
-                <h3>Добавить новый шаблон</h3>
-                <input
-                    type="text"
-                    value={newTemplateName}
-                    onChange={(e) => setNewTemplateName(e.target.value)}
-                    placeholder="Название нового шаблона"
-                />
-                <button onClick={handleAddTemplate} disabled={isLoading}>
-                    {isLoading ? 'Загрузка...' : 'Добавить шаблон'}
-                </button>
-            </div>
         </div>
     );
 }
