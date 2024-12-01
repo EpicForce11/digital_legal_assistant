@@ -1,6 +1,7 @@
 # Digital Legal Assistant (Цифровой помощник юриста)
 
 A digital assistant for legal document generation using FastAPI and React.
+
 Цифровой помощник для создания юридических документов с использованием FastAPI и React.
 
 ## Installation (Установка)
@@ -50,7 +51,7 @@ npm install --global yarn
 yarn start
 ```
 
-Open your browser at (откройте браузер):
+Open your browser at (откройте браузер по адресу):
 ```
 http://localhost:3000
 ```
@@ -63,4 +64,5 @@ This project is licensed under the MIT License.
 ## Contact
 
 Authors: Alexander Fedorov, Sergey Madykin
+
 Email: oooto2014@yandex.ru, madlawyer11@gmail.com  
