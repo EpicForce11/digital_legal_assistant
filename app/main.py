@@ -12,6 +12,7 @@ from io import BytesIO
 import shutil
 from datetime import datetime
 from typing import Optional, Union, Dict
+import subprocess
 
 # Путь к папке app
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -180,118 +181,30 @@ async def generate_document(
     # Возвращаем путь к документу для скачивания
     return {"message": "Документ создан", "document_id": new_document.id, "file_path": f"/documents/{new_document.id}"}
 
+# Функция для конвертации .docx в .pdf с использованием LibreOffice
+def convert_docx_to_pdf(docx_file: str, pdf_file: str):
+    try:
+        # Запуск LibreOffice для конвертации
+        subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", docx_file, "--outdir", os.path.dirname(pdf_file)], check=True)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500, detail="Ошибка конвертации документа в PDF")
+
 # Маршрут для скачивания документа
 @app.get("/documents/{document_id}")
-async def download_document(document_id: int, db: Session = Depends(get_db)):
+async def download_document(document_id: int, db: Session = Depends(get_db), format: Optional[str] = "docx"):
     document = db.query(GeneratedDocument).filter(GeneratedDocument.id == document_id).first()
     if not document:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден")
     
     # Проверяем, существует ли файл по указанному пути
-    if not os.path.exists(document.file_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден на сервере")
+    document_path = document.file_path
+    if not os.path.exists(document_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Файл не найден")
 
-    # Возвращаем файл пользователю
-    return FileResponse(document.file_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=document.file_path.split("/")[-1])
+    # Конвертируем в PDF, если указано
+    if format == "pdf" and document_path.endswith(".docx"):
+        pdf_file_path = document_path.replace(".docx", ".pdf")
+        convert_docx_to_pdf(document_path, pdf_file_path)
+        document_path = pdf_file_path
 
-@app.get("/edit-document/{document_id}/")
-async def get_document(document_id: int):
-    if document_id not in documents:
-        raise HTTPException(status_code=404, detail="Документ не найден")
-    return {"document_text": documents[document_id]}
-
-# Маршрут для редактирования документа
-@app.post("/edit-document/{document_id}/")
-async def edit_document(
-    document_id: int,
-    data: Union[DocumentData, LegalServicesData, DocumentText] = Body(...),
-    db: Session = Depends(get_db)
-):
-    # Ищем документ в базе данных
-    document = db.query(GeneratedDocument).filter(GeneratedDocument.id == document_id).first()
-    if not document:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Документ не найден")
-    
-    # Открываем документ для редактирования
-    doc = Document(document.file_path)
-
-    # Применяем изменения в зависимости от типа данных
-    if isinstance(data, DocumentData) and document.template.name == "BuySellContract":
-        for paragraph in doc.paragraphs:
-            if "{{seller_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{seller_name}}", data.seller_name)
-            if "{{buyer_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{buyer_name}}", data.buyer_name)
-            if "{{item}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{item}}", data.item)
-            if "{{price}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{price}}", str(data.price))
-
-    elif isinstance(data, LegalServicesData) and document.template.name == "LegalServicesContract":
-        for paragraph in doc.paragraphs:
-            if "{{contract_date}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{contract_date}}", data.contract_date)
-            if "{{lawyer_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{lawyer_name}}", data.lawyer_name)
-            if "{{client_name}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_name}}", data.client_name)
-            if "{{client_passport_series}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_series}}", data.client_passport_series)
-            if "{{client_passport_number}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_number}}", data.client_passport_number)
-            if "{{client_passport_issued_by}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_issued_by}}", data.client_passport_issued_by)
-            if "{{client_passport_issued_date}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_passport_issued_date}}", data.client_passport_issued_date)
-            if "{{client_address}}" in paragraph.text:
-                paragraph.text = paragraph.text.replace("{{client_address}}", data.client_address)
-
-    elif isinstance(data, DocumentText):
-        # Простое обновление всего текста документа
-        for paragraph in doc.paragraphs:
-            paragraph.text = data.text
-
-    else:
-        raise HTTPException(status_code=400, detail="Недопустимый формат данных для этого документа")
-
-    # Сохраняем изменения
-    doc.save(document.file_path)
-
-    return {"message": "Документ успешно обновлён", "file_path": f"/documents/{document.id}"}
-
-# Загружаем документ и конвертируем его в HTML
-@app.get("/document/{document_name}")
-async def get_document(document_name: str):
-    document_path = DOCUMENTS_PATH / document_name
-    if not document_path.exists():
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    with open(document_path, "rb") as docx_file:
-        result = mammoth.convert_to_html(docx_file)
-        html_content = result.value
-
-    return HTMLResponse(content=html_content)
-
-# Сохраняем изменения и возвращаем новый файл
-@app.post("/save-document/{document_name}")
-async def save_document(document_name: str, content: str):
-    document_path = DOCUMENTS_PATH / document_name
-    if not document_path.exists():
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    # Создаём новый .docx файл из полученного HTML
-    # Простой пример: можно использовать любой метод для создания .docx из HTML
-    # Для упрощения, тут мы просто заменяем старый файл новым контентом.
-    with open(document_path, "wb") as new_file:
-        new_file.write(content.encode("utf-8"))
-
-    return {"message": "Document saved successfully", "file_name": document_name}
-
-# Скачать документ
-@app.get("/download/{document_name}")
-async def download_document(document_name: str):
-    document_path = DOCUMENTS_PATH / document_name
-    if not document_path.exists():
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    return FileResponse(document_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=document_name)
+    return FileResponse(document_path)

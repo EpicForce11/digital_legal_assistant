@@ -8,6 +8,7 @@ function App() {
     const [newTemplateDescription, setNewTemplateDescription] = useState('');  // Описание шаблона
     const [file, setFile] = useState(null);  // Файл шаблона
     const [documentUrl, setDocumentUrl] = useState('');  // URL сгенерированного документа
+    const [downloadFormat, setDownloadFormat] = useState('docx');  // Формат скачивания (docx или pdf)
     const [isLoading, setIsLoading] = useState(false);  // Статус загрузки шаблона
     const [error, setError] = useState(null);  // Ошибка
 
@@ -173,12 +174,12 @@ function App() {
     // Функция для скачивания документа
     const handleDownload = async () => {
         try {
-            const response = await fetch(`http://127.0.0.1:8000/documents/${documentUrl.split('/').pop()}`);
+            const response = await fetch(`http://127.0.0.1:8000/documents/${documentUrl.split('/').pop()}?format=${downloadFormat}`);
             if (!response.ok) throw new Error('Не удалось скачать документ');
             const blob = await response.blob();
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = `document_${documentUrl.split('/').pop()}.docx`;
+            link.download = `document_${documentUrl.split('/').pop()}.${downloadFormat}`;
             link.click();
         } catch (error) {
             alert(`Ошибка: ${error.message}`);
@@ -233,28 +234,29 @@ function App() {
             {/* Выбор шаблона */}
             <label>
                 Выберите шаблон:
-                <select onChange={handleTemplateChange} value={selectedTemplate || ''}>
-                    <option value="">--Выберите--</option>
-                    {templates.map((template) => (
-                        <option key={template.id} value={template.id}>
-                            {template.name}
-                        </option>
+                <select value={selectedTemplate} onChange={handleTemplateChange}>
+                    <option value="">Выберите шаблон</option>
+                    {templates.map(template => (
+                        <option key={template.id} value={template.id}>{template.name}</option>
                     ))}
                 </select>
             </label>
 
-            {selectedTemplate && (
-                <form onSubmit={handleSubmit}>
-                    <h3>Заполните данные</h3>
-                    {renderFormFields()}
+            {/* Форма ввода данных для выбранного шаблона */}
+            {renderFormFields()}
 
-                    <button type="submit">Создать документ</button>
-                </form>
-            )}
+            <button onClick={handleSubmit}>Создать документ</button>
 
             {documentUrl && (
                 <div>
-                    <h3>Документ готов!</h3>
+                    <label>
+                        Выберите формат для скачивания:
+                        <select value={downloadFormat} onChange={(e) => setDownloadFormat(e.target.value)}>
+                            <option value="docx">DOCX</option>
+                            <option value="pdf">PDF</option>
+                        </select>
+                    </label>
+
                     <button onClick={handleDownload}>Скачать документ</button>
                 </div>
             )}
