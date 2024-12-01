@@ -26,15 +26,6 @@ A digital assistant for legal document generation using FastAPI and React.
    sudo apt install libreoffice
    ```
 
-## Configuration (Настройка)
-
-Create a `.env` file in the root directory and add the following variables:
-
-```plaintext
-API_KEY=your_api_key_here
-DATABASE_URL=postgresql://user:password@localhost/db_name
-```
-
 ## Usage (Использование)
 
 Split the termminal into two parts, the first one for the backend and the second one for the frontend.
