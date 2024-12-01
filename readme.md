@@ -22,6 +22,8 @@ A digital assistant for legal document generation using FastAPI and React.
 4. Install dependencies (установка зависимостей):
    ```bash
    pip install -r requirements.txt
+   sudo apt update
+   sudo apt install libreoffice
    ```
 
 ## Configuration (Настройка)
